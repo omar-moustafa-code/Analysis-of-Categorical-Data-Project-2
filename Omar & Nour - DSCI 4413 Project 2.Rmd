@@ -1,0 +1,455 @@
+---
+title: "Student Program Classification using Multinomial Logistic Regression"
+subtitle: "Analysis of Categorical Data (DSCI 4413) - Project 2"
+author: "Omar Moustafa (900222400) & Nour Kahky (900221042)"
+date: "`r format(Sys.Date(), '%B %d, %Y')`"
+output:
+  pdf_document:
+    toc: true
+    toc_depth: 3
+    number_sections: true
+    latex_engine: xelatex
+    highlight: arrow
+  html_document:
+    toc: true
+    toc_depth: 3
+    number_sections: true
+    theme: cosmo
+    highlight: arrow
+fontsize: 11pt
+geometry: margin=1in
+header-includes:
+  - \usepackage{booktabs}
+  - \usepackage{float}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = TRUE,
+  warning = FALSE,
+  message = FALSE
+)
+```
+
+
+# Introduction
+This report applies **multinomial logistic regression** to analyze how **socioeconomic status (`ses`)**, **math score**, and **science score** influence students’ **program type (`prog`)**, where the possible program categories are **academic**, **general**, and **vocational**. 
+
+The analysis includes descriptive summaries, visualizations, association tests, multinomial model fitting, and classification evaluation to assess both the statistical significance and predictive performance of the model.
+
+# Variable Types and Response Variable
+
+```{r}
+library(tidyverse)
+```
+
+
+```{r}
+df = read.csv("Project2_Data.csv")
+head(df, 5)
+```
+
+```{r}
+glimpse(df)
+```
+
+## Interpretation
+
+The dataset contains the following variables:
+
+- `ses`: categorical predictor representing socioeconomic status (`low`, `middle`, `high`)
+- `math`: numerical predictor representing mathematics score
+- `science`: numerical predictor representing science score
+- `prog`: categorical response variable representing program type (`academic`, `general`, `vocational`)
+
+The **response variable** in this analysis is `prog`.
+
+
+# Descriptive Summaries
+
+```{r}
+summary(df)
+
+table(df$ses)
+table(df$prog)
+
+summary(df$math)
+summary(df$science)
+```
+
+## Interpretation
+
+The dataset contains **240 observations**.
+
+The socioeconomic status distribution is:
+
+- **Middle:** 95 students
+- **Low:** 86 students
+- **High:** 59 students
+
+This indicates that the **middle SES group is the largest**, while the **high SES group is the smallest**.
+
+The program type distribution is:
+
+- **Academic:** 200 students
+- **General:** 33 students
+- **Vocational:** 7 students
+
+This shows that the **academic program dominates the dataset**, representing the vast majority of students, while the **vocational program has very few observations**.
+
+For the numerical predictors:
+
+- **Math mean = 58.43**
+- **Science mean = 59.33**
+
+The median values for both are close to the means, suggesting that the score distributions are approximately symmetric without severe skewness.
+
+# Data Visualizations
+
+```{r}
+ggplot(df, aes(x = ses)) +
+  geom_bar(fill = "steelblue") +
+  labs(title = "Distribution of Socioeconomic Status")
+
+ggplot(df, aes(x = prog)) +
+  geom_bar(fill = "darkorange") +
+  labs(title = "Distribution of Program Type")
+
+ggplot(df, aes(x = math)) +
+  geom_histogram(binwidth = 5, fill = "skyblue", color = "black") +
+  labs(title = "Distribution of Math Scores")
+
+ggplot(df, aes(x = science)) +
+  geom_histogram(binwidth = 5, fill = "seagreen", color = "black") +
+  labs(title = "Distribution of Science Scores")
+```
+
+## Interpretation
+
+The bar plots show that:
+
+- `middle` SES occurs most frequently
+- `academic` is by far the most common program category
+
+The histograms for `math` and `science` indicate that both scores are approximately bell-shaped, centered around **58–60**.
+
+The most noticeable pattern is the strong imbalance in `prog`, where the **academic category dominates**, suggesting that the multinomial model may predict `academic` much more often than the other categories.
+
+
+# Contingency Table for SES and Program Type
+
+```{r}
+tab <- table(df$ses, df$prog)
+tab
+prop.table(tab, margin = 1)
+```
+
+## Interpretation
+
+The contingency table shows:
+
+- Among **high SES** students, **57 out of 59** are in the **academic** program
+- Among **low SES** students, **64 out of 86** are in the academic program
+- The **general** and **vocational** programs occur more frequently among the **low and middle SES groups**
+
+This suggests that **higher SES students are much more likely to be in the academic program**, indicating a likely association between socioeconomic status and program type.
+
+
+# Chi-Square Test of Independence
+
+```{r}
+chisq.test(tab)
+```
+
+## Interpretation
+
+The chi-square test produced:
+
+- **Chi-square statistic = 12.53**
+- **p-value = 0.0138**
+
+Since the p-value is **less than 0.05**, we reject the null hypothesis of independence.
+
+This means there is a **statistically significant association** between **socioeconomic status (`ses`)** and **program type (`prog`)**.
+
+Therefore, students’ program type appears to depend on their SES category.
+
+
+# Mosaic Plot
+
+```{r}
+mosaicplot(tab,
+           main = "Mosaic Plot of SES and Program Type",
+           shade = TRUE,
+           color = TRUE)
+```
+
+## Interpretation
+
+The mosaic plot visually confirms the association between `ses` and `prog`.
+
+The **high SES** category has a much larger proportion in the **academic** program, while **low** and **middle SES** categories contribute relatively more students to the **general** and **vocational** programs.
+
+This visual pattern supports the chi-square test result that `ses` and `prog` are associated.
+
+
+# Fit the Multinomial Logistic Regression Model
+
+```{r}
+library(nnet)
+
+df$prog <- relevel(as.factor(df$prog), ref = "academic")
+
+model <- multinom(prog ~ ses + math + science, data = df)
+summary(model)
+```
+
+## Interpretation
+
+The multinomial logistic regression model estimates the probability of a student being in the **general** or **vocational** program relative to the **academic** program.
+
+The reference category is **academic**, meaning all coefficient estimates compare the odds of being in another program versus being in the academic program.
+
+
+# Generalized Logits
+
+```{r}
+summary(model)
+```
+
+Using **academic** as the reference category, the fitted generalized logit equations are:
+
+\[
+\log\left(\frac{P(\text{general})}{P(\text{academic})}\right)
+=
+-1.963
++
+1.623(\text{seslow})
++
+1.296(\text{sesmiddle})
+-
+0.00365(\text{math})
+-
+0.01546(\text{science})
+\]
+
+\[
+\log\left(\frac{P(\text{vocational})}{P(\text{academic})}\right)
+=
+-13.360
++
+9.197(\text{seslow})
++
+8.393(\text{sesmiddle})
++
+0.01047(\text{math})
++
+0.01753(\text{science})
+\]
+
+These equations represent the log-odds of a student being in the **general** or **vocational** program relative to the **academic** program based on socioeconomic status, math score, and science score.
+
+
+# Coefficient Interpretation
+
+```{r}
+summary(model)$coefficients
+exp(coef(model))
+
+z <- summary(model)$coefficients / summary(model)$standard.errors
+p <- 2 * (1 - pnorm(abs(z)))
+p
+```
+
+## Interpretation
+
+The multinomial logistic regression coefficients compare the odds of being in the **general** or **vocational** program relative to the **academic** program.
+
+## General vs Academic
+
+For students in the **low SES** group, the odds of being in the **general** program rather than the **academic** program are:
+
+\[
+e^{1.622958}=5.07
+\]
+
+times the odds for students in the **high SES** group.
+
+Students in the **middle SES** group have:
+
+\[
+e^{1.296289}=3.66
+\]
+
+times the odds of being in the general program relative to academic compared to students in the high SES group.
+
+However, the p-values for these SES effects are:
+
+- **low SES:** p = 0.108
+- **middle SES:** p = 0.126
+
+Since both p-values are greater than 0.05, these effects are **not statistically significant**.
+
+For the numerical predictors:
+
+- **math odds ratio = 0.996**, p = 0.856
+- **science odds ratio = 0.985**, p = 0.454
+
+These results indicate that **math and science scores do not significantly affect** the odds of being in the general program relative to academic.
+
+---
+
+## Vocational vs Academic
+
+For students in the **low SES** group, the odds of being in the **vocational** program rather than the **academic** program are:
+
+\[
+e^{9.197453}=9871.95
+\]
+
+times the odds for students in the **high SES** group.
+
+For students in the **middle SES** group, the odds are:
+
+\[
+e^{8.392668}=4414.58
+\]
+
+times the odds for the high SES group.
+
+These SES effects are highly significant:
+
+- **low SES:** p < 0.001
+- **middle SES:** p < 0.001
+
+This indicates that students in the low and middle SES groups are significantly more likely to be in the vocational program rather than the academic program compared to students in the high SES group.
+
+For academic scores:
+
+- **math odds ratio = 1.011**, p = 0.803
+- **science odds ratio = 1.018**, p = 0.670
+
+These p-values indicate that **math and science scores are not significant predictors** of vocational placement.
+
+---
+
+Overall, **socioeconomic status is the only important predictor in this model**, particularly for distinguishing **vocational** from **academic** students.
+
+The very large odds ratios for the vocational category should be interpreted cautiously because the vocational group contains very few observations, which can lead to unstable coefficient estimates.
+
+Furthermore, the fitted generalized logits also show that the coefficients for the **vocational** category are much larger than those for the **general** category, particularly for **seslow** and **sesmiddle**. This indicates that socioeconomic status has a greater effect on the likelihood of being in the vocational program relative to the academic program. On the other hand, the coefficients for **math** and **science** are relatively small in both logits, suggesting that these test scores have a weaker effect on academic program classification compared to socioeconomic status.
+
+# Compare Full Model to Intercept-Only Model
+
+```{r}
+model0 <- multinom(prog ~ 1, data = df)
+
+anova(model0, model)
+```
+
+## Interpretation
+
+The likelihood ratio test comparing the full multinomial model to the intercept-only model produced:
+
+\[
+\chi^2(8)=16.67,\quad p=0.0338
+\]
+
+Because the p-value is below 0.05, the full model is statistically significant and reveals strong evidence against the null hypothesis.  
+
+This indicates that the predictors **SES, math, and science scores collectively contribute to explaining variation in program type**, and the model with predictors provides a significantly better fit than the intercept-only model.
+
+
+# Classification Table
+
+```{r}
+library(caret)
+
+pred <- predict(model)
+
+confusionMatrix(pred, df$prog)
+```
+
+## Interpretation
+
+The confusion matrix shows that the model predicted **every student as academic**, regardless of the actual program type.
+
+Specifically:
+
+- All **200 academic** students were correctly classified
+- All **33 general** students were incorrectly classified as academic
+- All **7 vocational** students were incorrectly classified as academic
+
+This means the model completely failed to identify students in the **general** and **vocational** programs.
+
+The sensitivity values confirm this:
+
+- **Academic sensitivity = 1.00**
+- **General sensitivity = 0.00**
+- **Vocational sensitivity = 0.00**
+
+Therefore, while the model perfectly identifies academic students, it does not successfully classify the minority categories at all.
+
+
+# Classification Accuracy
+
+```{r}
+mean(pred == df$prog)
+```
+
+## Interpretation
+
+The overall classification accuracy of the model is:
+
+\[
+0.8333 = 83.33\%
+\]
+
+At first glance, this appears to indicate good predictive performance.
+
+However, the **No Information Rate (NIR)** is also:
+
+\[
+83.33\%
+\]
+
+This means that simply predicting every observation as **academic** would achieve the same accuracy.
+
+Additionally:
+
+- **Kappa = 0**, indicating no improvement over random classification based on the majority class
+- Sensitivity for **general** and **vocational** is **0**
+
+This shows that the model’s apparent high accuracy is entirely due to the dominance of the **academic** category in the dataset.
+
+Therefore, although the model achieves **83.33% accuracy**, it performs poorly as a classifier because it fails to distinguish the **general** and **vocational** program categories.
+
+# Conclusion
+
+This analysis used multinomial logistic regression to examine the effects of **socioeconomic status**, **math score**, and **science score** on students’ **program type**.
+
+The chi-square test showed a statistically significant association between socioeconomic status and program type:
+
+\[
+\chi^2 = 12.53,\quad p = 0.0138
+\]
+
+The likelihood ratio test also showed that the full multinomial model was statistically significant:
+
+\[
+\chi^2(8)=16.67,\quad p=0.0338
+\]
+
+Therefore, this indicates that the predictors jointly improve the model, but SES is the only meaningful individual predictor.
+
+The coefficient estimates showed that **SES was the strongest predictor**, with students in lower SES groups having much greater odds of being in the **general** or **vocational** programs relative to the **academic** program.
+
+However, the classification results revealed an important limitation: the model predicted **every student as academic**, producing an accuracy of **83.33%**, which is equal to the **No Information Rate**.
+
+This means the model failed to distinguish between the program categories and provided **no practical improvement in classification performance**, mainly due to the severe imbalance in the response variable.
+
+Overall, while the predictors are statistically significant, the model’s usefulness for classification is limited because of the dominance of the academic program category.
+
+# Reference
+AI Chat Link: https://chatgpt.com/share/69e8fdf7-b79c-83ea-a172-4898e33257ce
+
